@@ -1,0 +1,6 @@
+requests
+pycryptodome
+netifaces
+beautifulsoup4
+lxml
+urllib3
