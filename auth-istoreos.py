@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 import netifaces as ni
 from requests_toolbelt.adapters import source
+from sort_and_group import sort_tv_channel, get_tv_group_title, translate_tv_channel_name
 
 CONFIG = {
     # 破解得到的密钥
@@ -24,78 +25,6 @@ CONFIG = {
     'eds_server': '', 
     'platform': 'CTC', 
     'interface_suffix': 'CU', 
-}
-
-tv_channel_name = {
-    "CCTV-1综合": "CCTV-1",
-    "CCTV-2财经": "CCTV-2",
-    "CCTV-3综艺": "CCTV-3",
-    "CCTV-4中文国际": "CCTV-4",
-    "CCTV-5体育": "CCTV-5",
-    "CCTV-5+体育赛事": "CCTV-5+",
-    "CCTV-6电影": "CCTV-6",
-    "CCTV-7国防军事": "CCTV-7",
-    "CCTV-8电视剧": "CCTV-8",
-    "CCTV-9纪录": "CCTV-9",
-    "CCTV-10科教": "CCTV-10",
-    "CCTV-11戏曲": "CCTV-11",
-    "CCTV-12社会与法": "CCTV-12",
-    "CCTV-13新闻": "CCTV-13",
-    "CCTV-14少儿": "CCTV-14",
-    "CCTV-15音乐": "CCTV-15",
-    "CGTN英语": "CGTN",
-    "山东教育卫视": "山东教育",
-    "山西卫视-标清": "山西卫视",
-    "优漫卡通-标清": "优漫卡通",
-    "嘉佳卡通-标清": "嘉佳卡通",
-    "农林卫视-标清": "农林卫视",
-    "厦门卫视-标清": "厦门卫视",
-    "中国教育-1": "中国教育1",
-    "中国教育-2-标清": "中国教育2",
-    "中国教育-4": "中国教育4",
-    "延边卫视-标清": "延边卫视",
-    "爱体育高清": "爱体育",
-    "IPTV谍战剧场": "谍战剧场",
-    "CCTV-17农业农村": "CCTV-17",
-    "三沙卫视-标清": "三沙卫视",
-    "发现之旅-标清": "发现之旅",
-    "中学生-标清": "中学生",
-    "老故事-标清": "老故事",
-    "CCTV4中文国际欧洲": "CCTV4欧洲",
-    "CCTV4中文国际美洲": "CCTV4美洲",
-    "CGTN英文纪录": "CGTN纪录",
-    "CGTN西班牙语": "CGTN西语",
-    "CGTN阿拉伯语": "CGTN阿语",
-    "CCTV-4K超高清": "CCTV4K",
-    "CHC-家庭影院": "CHC家庭影院",
-    "CHC-动作电影": "CHC动作电影",
-    "CHC-影迷电影": "CHC影迷电影",
-    "书画-标清": "书画",
-    "新动漫-标清": "新动漫",
-    "IPTV收视指南": "收视指南",
-    "IPTV相声小品": "相声小品",
-    "优优宝贝-标清": "优优宝贝",
-    "北京卫视4K超高清": "北京卫视4K",
-    "深圳卫视4K超高清": "深圳卫视4K",
-    "广东卫视4K超高清": "广东卫视4K",
-    "山东卫视4K超高清": "山东卫视4K",
-    "湖南卫视4K超高清": "湖南卫视4K",
-    "浙江卫视4K超高清": "浙江卫视4K",
-    "江苏卫视4K超高清": "江苏卫视4K",
-    "东方卫视4K超高清": "东方卫视4K",
-    "四川卫视4K超高清": "四川卫视4K",
-    "金鹰卡通-标清": "金鹰卡通",
-    "汽摩频道": "汽摩",
-    "优购物-标清": "优购物",
-    "央广购物-标清": "央广购物",
-    "浙江卫视-标清": "浙江卫视",
-    "安徽卫视-标清": "安徽卫视",
-    "北京卫视-标清": "北京卫视",
-    "东方卫视-标清": "东方卫视",
-    "天津卫视-标清": "天津卫视",
-    "辽宁卫视-标清": "辽宁卫视",
-    "东南卫视-标清": "东南卫视",
-    "湖北卫视-标清": "湖北卫视",
 }
 
 # 传入网卡名，比如 'eth0' 或 'en0'
@@ -387,6 +316,7 @@ class IPTVAuthenticator:
             self.log("❌ 未获取到任何频道")
             return 0
 
+        channels = sort_tv_channel(channels)
 
         # 生成M3U文件
         with open(save_dir_m3u, 'w', encoding='utf-8') as fm3u:
@@ -394,7 +324,8 @@ class IPTVAuthenticator:
             fm3u.write(f'#EXTM3U x-tvg-url="https://gh-proxy.com/https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz"\n')
             for channel in channels:
                 channel_id, ch_name, user_ch_id, igmp, timeshift, ts_len, ts_url, fcc, fcc_ip, fcc_port, fec_port = channel
-                ch_name = tv_channel_name.get(ch_name, ch_name)
+                group_title = get_tv_group_title(ch_name)
+                ch_name = translate_tv_channel_name(ch_name)
                 # 支持时移的M3U标签
                 url=f'rtp://{igmp}'
                 m3u_ts = f' catchup="default" catchup-source="{ts_url}&playseek=${{(b)yyyyMMddHHmmss}}-${{(e)yyyyMMddHHmmss}}"' if ts_url else ""
@@ -404,7 +335,7 @@ class IPTVAuthenticator:
                     url = f"{url}?fec={fec_port}"
                 elif fcc == "2" and fec_port != "0":
                     url = f"{url}?fcc={fcc_ip}:{fcc_port}&fec={fec_port}"
-                fm3u.write(f'#EXTINF:-1 tvg-id="{channel_id}" tvg-name="{ch_name}" tvg-logo="{logo}{ch_name}.png" {m3u_ts}, {ch_name}\n{url}\n')
+                fm3u.write(f'#EXTINF:-1 tvg-id="{channel_id}" tvg-name="{ch_name}" group-title="{group_title}" tvg-logo="{logo}{ch_name}.png" {m3u_ts}, {ch_name}\n{url}\n')
         self.log(f"✅ 频道文件生成完成：- {save_dir_m3u}")
 
         return len(channel_list)
