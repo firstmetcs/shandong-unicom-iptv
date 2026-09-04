@@ -321,7 +321,7 @@ class IPTVAuthenticator:
         # 生成M3U文件
         with open(save_dir_m3u, 'w', encoding='utf-8') as fm3u:
             logo = 'https://gh-proxy.com/https://raw.githubusercontent.com/firstmetcs/shandong-unicom-iptv/main/logo/'
-            fm3u.write(f'#EXTM3U x-tvg-url="https://gh-proxy.com/https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz"\n')
+            fm3u.write(f'#EXTM3U x-tvg-url="https://gh-proxy.com/https://raw.githubusercontent.com/sggc/SD-EPG/refs/heads/main/EPG/sggc.xml.gz"\n')
             for channel in channels:
                 channel_id, ch_name, user_ch_id, igmp, timeshift, ts_len, ts_url, fcc, fcc_ip, fcc_port, fec_port = channel
                 group_title = get_tv_group_title(ch_name)
