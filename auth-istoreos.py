@@ -27,6 +27,8 @@ CONFIG = {
     'interface_suffix': 'CU', 
 }
 
+user_agent = 'Mozilla/5.0 (X11; U; Linux i686; en-US) AppleWebKit/534.0 (KHTML, like Gecko)'
+
 # 传入网卡名，比如 'eth0' 或 'en0'
 def get_ip_by_interface(interface_name):
     try:
@@ -133,7 +135,7 @@ class IPTVAuthenticator:
         self.log("=" * 60)
         url = f"http://{self.config['eds_server']}/EDS/jsp/AuthenticationURL?UserID={self.config['user_id']}&Action=Login&FCCSupport=1"
         headers = {
-            'User-Agent': 'B700-V2A|Mozilla|5.0|ztebw(Chrome)|1.2.0',
+            'User-Agent': user_agent,
         }
         self.log(f"请求: {url}")
         try:
@@ -158,7 +160,7 @@ class IPTVAuthenticator:
         }
 
         headers = {
-            'User-Agent': 'B700-V2A|Mozilla|5.0|ztebw(Chrome)|1.2.0',
+            'User-Agent': user_agent,
             'Content-Type': 'application/x-www-form-urlencoded',
         }
         self.log(f"请求: {url}")
@@ -212,7 +214,7 @@ class IPTVAuthenticator:
         }
 
         headers = {
-            'User-Agent': 'B700-V2A|Mozilla|5.0|ztebw(Chrome)|1.2.0',
+            'User-Agent': user_agent,
             'Content-Type': 'application/x-www-form-urlencoded',
         }
         self.log(f"请求: {url}")
