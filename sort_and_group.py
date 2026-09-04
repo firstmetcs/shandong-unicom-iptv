@@ -295,6 +295,7 @@ tv_channel_name = {
     "央广购物-标清": "央广购物",
     "CCTV-14": "CCTV-14少儿",
 	"居家购物": "山东居家购物",
+	"马赛克": "九屏同看",
 }
 
 def translate_tv_channel_name(ch_name):
