@@ -384,7 +384,7 @@ class IPTVAuthenticator:
                         'index': offset  # 用你定义的真实 index
                     }
 
-                    res = requests.get(epg_url, headers=headers, params=params, cookies=self.cookies, timeout=10)
+                    res = self.session.get(epg_url, headers=headers, params=params, cookies=self.cookies, timeout=10)
                     res.encoding = 'utf-8'
 
                     if res.status_code != 200:
@@ -399,7 +399,7 @@ class IPTVAuthenticator:
                         continue
 
                     programs = []
-                    for item in program_list:
+                    for index, item in enumerate(program_list):
                         st = item["startTime"].replace(":", "")
                         et = item["endTime"].replace(":", "")
 
@@ -408,8 +408,13 @@ class IPTVAuthenticator:
 
                         start_time = f"{date_str}{st_full} +0800"
                         end_time = f"{date_str}{et_full} +0800"
-                        if et_full == "000000":
-                            end_time = f"{(today + timedelta(days=offset) + timedelta(days=1)).strftime('%Y%m%d')}{et_full} +0800"
+                        if int(et_full) < int(st_full):
+                            if index == 0:
+                                start_time = f"{(current_date + timedelta(days=-1)).strftime('%Y%m%d')}{st_full} +0800"
+                            else:
+                                end_time = f"{(current_date + timedelta(days=1)).strftime('%Y%m%d')}{et_full} +0800"
+                        if st_full == "000000" and index != 0:
+                            start_time = f"{(current_date + timedelta(days=+1)).strftime('%Y%m%d')}{st_full} +0800"
 
                         programs.append({
                             "start_time": start_time,
@@ -423,7 +428,7 @@ class IPTVAuthenticator:
                     # self.log(f" ✅ {len(programs)}条")
 
                 except Exception as e:
-                    self.log(f" ❌ 错误：{str(e)[:30]}")
+                    self.log(f" ❌ 错误：{str(e)}")
                 time.sleep(0.2)
 
         # ===================== 生成XML =====================
