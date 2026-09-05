@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 import requests
 import netifaces as ni
 from requests_toolbelt.adapters import source
+from datetime import datetime, timedelta
 from sort_and_group import sort_tv_channel, get_tv_group_title, translate_tv_channel_name
+from fill_epg import fill_epg
 
 CONFIG = {
     # 破解得到的密钥
@@ -42,6 +44,7 @@ def get_ip_by_interface(interface_name):
 
 
 save_dir_m3u = 'playlist.m3u'
+epg_save_path = 'epg.xml'
 
 def get_local_ip():
     try:
@@ -323,7 +326,7 @@ class IPTVAuthenticator:
         # 生成M3U文件
         with open(save_dir_m3u, 'w', encoding='utf-8') as fm3u:
             logo = 'https://gh-proxy.com/https://raw.githubusercontent.com/firstmetcs/shandong-unicom-iptv/main/logo/'
-            fm3u.write(f'#EXTM3U x-tvg-url="https://gh-proxy.com/https://raw.githubusercontent.com/sggc/SD-EPG/refs/heads/main/EPG/sggc.xml.gz"\n')
+            fm3u.write(f'#EXTM3U x-tvg-url="file:///root/iptv/epg.xml"\n')
             for channel in channels:
                 channel_id, ch_name, user_ch_id, igmp, timeshift, ts_len, ts_url, fcc, fcc_ip, fcc_port, fec_port = channel
                 group_title = get_tv_group_title(ch_name)
@@ -340,7 +343,108 @@ class IPTVAuthenticator:
                 fm3u.write(f'#EXTINF:-1 tvg-id="{channel_id}" tvg-name="{ch_name}" group-title="{group_title}" tvg-logo="{logo}{ch_name}.png" {m3u_ts}, {ch_name}\n{url}\n')
         self.log(f"✅ 频道文件生成完成：- {save_dir_m3u}")
 
+        self.step4_2_get_epg(channel_info)
+
         return len(channel_list)
+
+
+    ################################# 生成频道文件 ###########################################
+    def step4_2_get_epg(self, channel_info):
+        """批量获取所有频道的EPG并生成XML文件"""
+        self.log("=" * 60)
+        self.log("步骤4_2: 📺 开始抓取EPG数据...")
+        self.log("=" * 60)
+        epg_data = {}
+        headers = {
+            'User-Agent': user_agent,
+            'Connection': 'keep-alive',
+            'Pragma': 'no-cache',
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept-Language': 'zh-cn,en-us,en',
+            'Accept': '*/*',
+        }
+        self.log(f"当前服务器HOST: {self.epg_host}")
+        today = datetime.now()
+
+        # 🔥 抓取顺序：-5 → -4 → -3 → -2 → -1 → 0 → 1（从早 → 晚）
+        index_list = [-6, -5, -4, -3, -2, -1, 0, 1]
+        
+        for offset in index_list:
+            # 日期计算：今天 + offset 天
+            current_date = today + timedelta(days=offset)
+            date_str = current_date.strftime("%Y%m%d")
+            self.log(f"━━━━━ 抓取 index={offset} 天：{date_str} ━━━━━")
+
+            for idx, (channel_id, [ch_name, user_ch_id]) in enumerate(channel_info.items(), 1):
+                # self.log(f"  [{idx:3d}/{len(channel_info)}]  {ch_name:<20}")
+                try:
+                    epg_url = f'http://{self.epg_host}/EPG/jsp/defaulttrans2/en/datajsp/getTvodProgListByIndex.jsp'
+                    params = {
+                        'CHANNELID': channel_id,
+                        'index': offset  # 用你定义的真实 index
+                    }
+
+                    res = requests.get(epg_url, headers=headers, params=params, cookies=self.cookies, timeout=10)
+                    res.encoding = 'utf-8'
+
+                    if res.status_code != 200:
+                        self.log(f" ❌ {res.status_code}")
+                        continue
+
+                    json_data = res.json()
+                    program_list = json_data.get("data", [])
+
+                    if not program_list:
+                        # self.log(" ⚪ 无节目")
+                        continue
+
+                    programs = []
+                    for item in program_list:
+                        st = item["startTime"].replace(":", "")
+                        et = item["endTime"].replace(":", "")
+
+                        st_full = f"{st:0<4}00"[:6]
+                        et_full = f"{et:0<4}00"[:6]
+
+                        start_time = f"{date_str}{st_full} +0800"
+                        end_time = f"{date_str}{et_full} +0800"
+                        if et_full == "000000":
+                            end_time = f"{(today + timedelta(days=offset) + timedelta(days=1)).strftime('%Y%m%d')}{et_full} +0800"
+
+                        programs.append({
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "program_name": item.get("progName", "")
+                        })
+
+                    if channel_id not in epg_data:
+                        epg_data[channel_id] = []
+                    epg_data[channel_id].extend(programs)
+                    # self.log(f" ✅ {len(programs)}条")
+
+                except Exception as e:
+                    self.log(f" ❌ 错误：{str(e)[:30]}")
+                time.sleep(0.2)
+
+        # ===================== 生成XML =====================
+        with open(epg_save_path, 'w', encoding='utf-8') as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+            f.write('<tv generator-info-name="rtp2httpd" generator-info-version="1.0">\n')
+            
+            for channel_id, [ch_name, _] in channel_info.items():
+                f.write(f'<channel id="{channel_id}">\n')
+                f.write(f'  <display-name lang="zh">{translate_tv_channel_name(ch_name)}</display-name>\n')
+                f.write(f'</channel>\n')
+                
+                if channel_id in epg_data:
+                    for p in epg_data[channel_id]:
+                        f.write(f'<programme channel="{channel_id}" start="{p["start_time"]}" stop="{p["end_time"]}">\n')
+                        f.write(f'  <title lang="zh">{p["program_name"]}</title>\n')
+                        f.write(f'</programme>\n')
+            
+            f.write('</tv>\n')
+        self.log(f"✅ EPG生成完成：{epg_save_path}")
+        fill_epg(epg_save_path, log=self.log)
 
 
     def run(self):
