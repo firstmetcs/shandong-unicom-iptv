@@ -11,6 +11,7 @@ import requests
 import netifaces as ni
 from requests_toolbelt.adapters import source
 from datetime import datetime, timedelta
+import gzip
 from sort_and_group import sort_tv_channel, get_tv_group_title, translate_tv_channel_name
 from fill_epg import fill_epg
 
@@ -326,7 +327,7 @@ class IPTVAuthenticator:
         # 生成M3U文件
         with open(save_dir_m3u, 'w', encoding='utf-8') as fm3u:
             logo = 'https://gh-proxy.com/https://raw.githubusercontent.com/firstmetcs/shandong-unicom-iptv/main/logo/'
-            fm3u.write(f'#EXTM3U x-tvg-url="file:///root/iptv/epg.xml"\n')
+            fm3u.write(f'#EXTM3U x-tvg-url="file:///root/iptv/epg.xml.gz"\n')
             for channel in channels:
                 channel_id, ch_name, user_ch_id, igmp, timeshift, ts_len, ts_url, fcc, fcc_ip, fcc_port, fec_port = channel
                 group_title = get_tv_group_title(ch_name)
@@ -451,6 +452,12 @@ class IPTVAuthenticator:
             f.write('</tv>\n')
         self.log(f"✅ EPG生成完成：{epg_save_path}")
         fill_epg(epg_save_path, log=self.log)
+
+        # 读取原文件并写入 gz 文件
+        with open(epg_save_path, 'rb') as f_in:
+            with gzip.open(f"{epg_save_path}.gz", 'wb') as f_out:
+                f_out.write(f_in.read())
+        self.log(f"✅ EPG转换为gz：{epg_save_path}.gz")
 
 
     def run(self):
