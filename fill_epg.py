@@ -356,9 +356,9 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
     out_path = output or epg_path
     if out_path == epg_path and backup:
         bak = epg_path + '.bak'
-        if not os.path.exists(bak):
-            shutil.copy2(epg_path, bak)
-            log(f'[6] 已备份原文件 -> {bak}')
+        # if not os.path.exists(bak):
+        shutil.copy2(epg_path, bak)
+        log(f'[6] 已备份原文件 -> {bak}')
     epg_tree.write(out_path, encoding='UTF-8', xml_declaration=True)
     log(f'[6] 已写入 {out_path}')
     result['output'] = out_path
