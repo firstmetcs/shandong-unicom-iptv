@@ -1,4 +1,5 @@
 import sys
+import os
 import random
 import re
 import time
@@ -43,7 +44,7 @@ def get_ip_by_interface(interface_name):
         print(f"无法获取网卡 {interface_name} 的IP: {e}")
         return None
 
-
+work_dir = '/root/iptv/'
 save_dir_m3u = 'playlist.m3u'
 epg_save_path = 'epg.xml'
 
@@ -109,6 +110,9 @@ class IPTVAuthenticator:
         self.user_token = None
         self.cookies = None
         self.stbid = None
+
+        os.chdir(f"{work_dir}")
+        print(f"初始化完成，切换工作目录为：{work_dir}")
 
     def log(self, msg):
         """日志输出"""
