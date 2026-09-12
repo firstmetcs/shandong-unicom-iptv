@@ -13,12 +13,15 @@ epg 频道 id）。同时检查各频道节目时间是否连续，不连续时�
     result = fill_epg('epg.xml')                      # 默认从 GitHub 下载 sggc
     result = fill_epg('epg.xml', 'sggc.xml')          # 本地文件作为来源
     result = fill_epg('epg.xml', log=lambda m: None)  # 静默模式
+    # 补充日期窗口（相对今天的天数偏移，0=今天）:
+    result = fill_epg('epg.xml', index_list=[-6, -5, -4, -3, -2, -1, 0, 1])
     # result: {'channels', 'empty', 'filled', 'unmatched', 'added',
-    #          'deduped', 'sggc_deduped', 'gap_filled', 'gap_inserted',
-    #          'gap_no_source', 'output'}
+    #          'deduped', 'sggc_deduped', 'window', 'gap_filled',
+    #          'gap_inserted', 'gap_no_source', 'output'}
 
 命令行用法:
     python fill_epg.py [epg.xml] [sggc来源] [-o 输出文件] [--no-backup]
+                       [--index-list -6 -5 -4 -3 -2 -1 0 1]
 
 sggc来源 默认为 GitHub 上的 sggc.xml.gz 在线地址（自动下载并解压），
 也可传本地 xml 文件路径。默认原地更新 epg.xml（首次运行生成 epg.xml.bak
@@ -71,13 +74,13 @@ def name_keys(name):
 def load_sggc(source, log=print):
     """来源为 http(s) URL 时下载并解压（.gz），否则按本地 xml 文件解析。"""
     if source.startswith(('http://', 'https://')):
-        log(f'[0] 下载 {source}')
+        log(f'[1] 下载 {source}')
         req = urllib.request.Request(source, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=120) as resp:
             data = resp.read()
         if source.endswith('.gz'):
             data = gzip.decompress(data)
-        log(f'[0] 下载完成，解压后 {len(data) / 1048576:.1f} MB')
+        log(f'[1] 下载完成，解压后 {len(data) / 1048576:.1f} MB')
         return ET.fromstring(data)
     return ET.parse(source).getroot()
 
@@ -192,12 +195,18 @@ def dedup_programmes(root):
     return removed
 
 
-def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print):
+def fill_epg(epg_path, sggc_source=SGGC_URL, index_list=None, output=None,
+             backup=True, log=print):
     """补充 epg 文件中无 programme 的频道。
 
     参数:
         epg_path:   待补充的 epg xml 文件
         sggc_source: 节目来源，http(s) URL（.gz 自动解压）或本地 xml 路径
+        index_list: 补充日期窗口，相对今天的天数偏移列表（0=今天），如
+                    [-6,-5,-4,-3,-2,-1,0,1] 表示今天前 6 天到后 1 天，
+                    取 min/max 为闭区间；窗口内首尾也算缺口（频道首节目
+                    之前、末节目之后的时间会一并在窗口内补齐）；None 时
+                    不限制（空频道沿用 epg 已有节目日期范围，缺口不限制）
         output:     输出文件，默认原地覆盖 epg_path
         backup:     原地覆盖时是否生成一次性的 <epg>.bak 备份
         log:        日志回调，默认 print，传 lambda m: None 可静默
@@ -206,7 +215,7 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
         {'channels': 频道总数, 'empty': [(cid, name)],
          'filled': [(cid, name, sggc_id, 补充条数)], 'unmatched': [(cid, name)],
          'added': 空频道补充总条数, 'deduped': epg 去重条数,
-         'sggc_deduped': sggc 去重条数,
+         'sggc_deduped': sggc 去重条数, 'window': (起, 止) 或 None,
          'gap_filled': [(cid, name, 缺口段数, 插入条数, 剩余缺口秒)],
          'gap_inserted': 缺口补充总条数, 'gap_no_source': [(cid, name)],
          'output': 输出文件路径}
@@ -216,15 +225,25 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
     log("=" * 60)
     epg_tree = ET.parse(epg_path)
     epg_root = epg_tree.getroot()
-    # 1. 去重：删除同频道下起止时间完全相同的重复节目（须在匹配/补充前做）
-    n_dedup = dedup_programmes(epg_root)
-    log(f'[1] 去重: 删除 epg 同频道起止完全相同的重复节目 {n_dedup} 条')
+    # 1. 加载 sggc 来源（URL 自动下载，日志 [1]）
     sggc_root = load_sggc(sggc_source, log=log)
+    # 2. 去重：删除同频道下起止时间完全相同的重复节目（须在匹配/补充前做）
+    n_dedup = dedup_programmes(epg_root)
     n_sggc_dedup = dedup_programmes(sggc_root)
-    if n_sggc_dedup:
-        log(f'[1] 去重: 删除 sggc 来源重复节目 {n_sggc_dedup} 条')
+    log(f'[2] 去重: epg 删除 {n_dedup} 条, sggc 来源删除 {n_sggc_dedup} 条')
 
-    # 2. 统计 epg 各频道节目数，找出无 programme 的频道
+    # 3. 补充日期窗口：index_list 相对今天的天数偏移（0=今天）
+    win_d0 = win_d1 = None
+    win_lo = win_hi = None
+    if index_list:
+        today = datetime.now().date()
+        win_d0 = (today + timedelta(days=min(index_list))).strftime('%Y%m%d')
+        win_d1 = (today + timedelta(days=max(index_list))).strftime('%Y%m%d')
+        # 边界须与 parse_ts 同一比较空间（本地日界按 +0800 换算），否则错位 8 小时
+        win_lo = parse_ts(win_d0 + '000000 +0800')
+        win_hi = parse_ts(win_d1 + '000000 +0800') + timedelta(days=1)  # 含末日全天
+
+    # 4. 统计 epg 各频道节目数，找出无 programme 的频道
     prog_count = defaultdict(int)
     for p in epg_root.findall('programme'):
         prog_count[p.get('channel')] += 1
@@ -234,15 +253,18 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
             dn = ch.find('display-name')
             empty_channels.append((ch.get('id'), dn.text if dn is not None else ''))
     total_channels = len(epg_root.findall('channel'))
-    log(f'[2] {epg_path}: 频道 {total_channels} 个，其中无节目 {len(empty_channels)} 个')
+    win_txt = f'{win_d0}~{win_d1}' if win_d0 else '不限(空频道沿用epg日期范围)'
+    log(f'[3] 日期窗口: {win_txt}')
+    log(f'[4] {epg_path}: 频道 {total_channels} 个，其中无节目 {len(empty_channels)} 个')
 
     result = {'channels': total_channels, 'empty': empty_channels,
               'filled': [], 'unmatched': [], 'added': 0,
               'deduped': n_dedup, 'sggc_deduped': n_sggc_dedup,
+              'window': (win_d0, win_d1) if win_d0 else None,
               'gap_filled': [], 'gap_inserted': 0, 'gap_no_source': [],
               'output': None}
 
-    # 3. 建 sggc 别名表与节目索引（空频道补充和缺口补充共用）
+    # 5. 建 sggc 别名表与节目索引（空频道补充和缺口补充共用）
     alias = build_alias_table(sggc_root)
     sggc_progs = defaultdict(list)
     for p in sggc_root.findall('programme'):
@@ -259,8 +281,8 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
             else:
                 result['unmatched'].append((cid, name))
 
-        # 4. 空频道：按 epg 已有节目日期范围过滤后整体复制
-        dmin, dmax = date_range_of(epg_root)
+        # 6. 空频道：按日期窗口（或 epg 已有节目日期范围）过滤后整体复制
+        dmin, dmax = (win_d0, win_d1) if win_d0 else date_range_of(epg_root)
         total_added = 0
         for cid, name, sid in matched:
             progs = [p for p in sggc_progs.get(sid, [])
@@ -276,18 +298,18 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
             mark = '' if progs else '  (sggc 中该频道无日期范围内的节目)'
             log(f'    {name} -> sggc[{sid}]: +{len(progs)} 条{mark}')
 
-        log(f'[3] 空频道: 匹配 {len(matched)} 个，共补充 {total_added} 条节目')
+        log(f'[5] 空频道: 匹配 {len(matched)} 个，共补充 {total_added} 条节目')
         if result['unmatched']:
-            log(f"[4] 未匹配 {len(result['unmatched'])} 个（sggc 中无对应频道，保持原样）:")
+            log(f"[6] 未匹配 {len(result['unmatched'])} 个（sggc 中无对应频道，保持原样）:")
             for _, name in result['unmatched']:
                 log(f'    {name}')
         else:
-            log('[4] 空频道全部匹配')
+            log('[6] 空频道全部匹配')
         result['added'] = total_added
     else:
-        log('[3] 所有频道均有节目，跳过空频道补充')
+        log('[5] 所有频道均有节目，跳过空频道补充')
 
-    # 5. 连续性检查：从 sggc 填补已有频道的时间缺口（epg 已有内容优先）
+    # 7. 连续性检查：从 sggc 填补已有频道的时间缺口（epg 已有内容优先）
     cid2name = {ch.get('id'): (ch.find('display-name').text
                                if ch.find('display-name') is not None else '')
                 for ch in epg_root.findall('channel')}
@@ -310,6 +332,18 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
                 continue
             if pe and ns and ns > pe:
                 gaps.append((a, pe, ns))
+        if win_lo is not None:
+            # 窗口模式下补首/尾缺口：窗口起点到首个节目前、末节目后到窗口终点，
+            # 否则末节目之后（如仅到 0912）即使窗口含 0913 也无法检测到缺口
+            fs = parse_ts(progs[0].get('start'))
+            if fs and fs > win_lo:
+                gaps.append((None, win_lo, fs))
+            las, ls = parse_ts(progs[-1].get('start')), parse_ts(progs[-1].get('stop'))
+            if ls and las and ls >= las and ls < win_hi:
+                gaps.append((progs[-1], ls, win_hi))
+            # 缺口窗口与补充日期窗口取交集，窗口外不补充
+            gaps = [(a, max(lo, win_lo), min(hi, win_hi)) for a, lo, hi in gaps]
+            gaps = [(a, lo, hi) for a, lo, hi in gaps if lo < hi]
         if not gaps:
             continue
         if cid not in sid_cache:
@@ -325,7 +359,10 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
         for prev, lo, hi in gaps:
             fill = fill_gap_from(src, lo, hi)
             covered = 0.0
-            base = child_index(epg_root, prev) + 1
+            if prev is None:
+                base = child_index(epg_root, progs[0])  # 头缺口：插在首节目前
+            else:
+                base = child_index(epg_root, prev) + 1
             for j, np in enumerate(fill):
                 np.set('channel', cid)
                 reindent_programme(np)
@@ -338,7 +375,7 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
         remain_total += remain
 
     if result['gap_filled'] or result['gap_no_source']:
-        log(f"[5] 连续性检查: {len(result['gap_filled'])} 个频道插入缺口节目 "
+        log(f"[7] 连续性检查: {len(result['gap_filled'])} 个频道插入缺口节目 "
             f"{result['gap_inserted']} 条，补充后仍缺 {remain_total / 3600:.1f} 小时")
         for _, name, n_gap, n_ins, rem in result['gap_filled']:
             if n_ins or rem >= 60:
@@ -348,19 +385,19 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, output=None, backup=True, log=print
             log(f"    另有 {len(result['gap_no_source'])} 个缺口频道在 sggc 中无匹配，未处理: "
                 + ', '.join(n for _, n in result['gap_no_source']))
     else:
-        log('[5] 连续性检查: 所有频道节目均连续')
+        log('[7] 连续性检查: 所有频道节目均连续')
     if bad_intervals:
         log(f"    注: {bad_intervals} 条节目 stop 早于 start（源导出数据异常），已跳过其缺口计算")
 
-    # 6. 写出
+    # 8. 写出
     out_path = output or epg_path
     if out_path == epg_path and backup:
         bak = epg_path + '.bak'
         # if not os.path.exists(bak):
         shutil.copy2(epg_path, bak)
-        log(f'[6] 已备份原文件 -> {bak}')
+        log(f'[8] 已备份原文件 -> {bak}')
     epg_tree.write(out_path, encoding='UTF-8', xml_declaration=True)
-    log(f'[6] 已写入 {out_path}')
+    log(f'[8] 已写入 {out_path}')
     result['output'] = out_path
     return result
 
@@ -372,9 +409,11 @@ def main():
                     help='节目来源：URL 或本地 xml 文件 (默认 GitHub sggc.xml.gz)')
     ap.add_argument('-o', '--output', default=None, help='输出文件，默认原地覆盖 epg 文件')
     ap.add_argument('--no-backup', action='store_true', help='原地覆盖时不生成 .bak 备份')
+    ap.add_argument('--index-list', nargs='+', type=int, default=None,
+                    help='补充日期窗口(相对今天的天数偏移, 0=今天), 如: --index-list -6 -5 -4 -3 -2 -1 0 1')
     args = ap.parse_args()
-    fill_epg(args.epg, sggc_source=args.sggc, output=args.output,
-             backup=not args.no_backup)
+    fill_epg(args.epg, sggc_source=args.sggc, index_list=args.index_list,
+             output=args.output, backup=not args.no_backup)
 
 
 if __name__ == '__main__':

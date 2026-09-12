@@ -455,7 +455,7 @@ class IPTVAuthenticator:
             
             f.write('</tv>\n')
         self.log(f"✅ EPG生成完成：{epg_save_path}")
-        fill_epg(epg_save_path, log=self.log)
+        fill_epg(epg_save_path, log=self.log, index_list=index_list)
 
         # 读取原文件并写入 gz 文件
         with open(epg_save_path, 'rb') as f_in:
