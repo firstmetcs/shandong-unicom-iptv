@@ -128,7 +128,7 @@ class IPTVAuthenticator:
         # 组装明文 - 关键修改：用"Reserved"代替空，使用CTC平台标识
         plaintext = f"{random_num}${encrypt_token}${self.config['user_id']}${self.config['stb_id']}${self.config['ip']}${self.config['mac']}$Reserved${self.config['platform']}"
         # DES加密（3DES退化为DES）
-        key = self.config['key'].encode('ascii')
+        key = self.config['key'].ljust(8, "0").encode('ascii')
         cipher = DES.new(key, DES.MODE_ECB)
         padded = pad(plaintext.encode('ascii'), 8)
         authenticator = cipher.encrypt(padded).hex().upper()
