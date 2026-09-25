@@ -296,7 +296,7 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, index_list=None, output=None,
             total_added += len(progs)
             result['filled'].append((cid, name, sid, len(progs)))
             mark = '' if progs else '  (sggc 中该频道无日期范围内的节目)'
-            log(f'    {name} -> sggc[{sid}]: +{len(progs)} 条{mark}')
+            # log(f'    {name} -> sggc[{sid}]: +{len(progs)} 条{mark}')
 
         log(f'[5] 空频道: 匹配 {len(matched)} 个，共补充 {total_added} 条节目')
         if result['unmatched']:
@@ -377,13 +377,13 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, index_list=None, output=None,
     if result['gap_filled'] or result['gap_no_source']:
         log(f"[7] 连续性检查: {len(result['gap_filled'])} 个频道插入缺口节目 "
             f"{result['gap_inserted']} 条，补充后仍缺 {remain_total / 3600:.1f} 小时")
-        for _, name, n_gap, n_ins, rem in result['gap_filled']:
-            if n_ins or rem >= 60:
-                log(f'    {name}: 缺口{n_gap}段, 插入{n_ins}条'
-                    + (f', 仍缺{rem / 3600:.1f}小时' if rem >= 60 else ''))
-        if result['gap_no_source']:
-            log(f"    另有 {len(result['gap_no_source'])} 个缺口频道在 sggc 中无匹配，未处理: "
-                + ', '.join(n for _, n in result['gap_no_source']))
+        # for _, name, n_gap, n_ins, rem in result['gap_filled']:
+        #     if n_ins or rem >= 60:
+        #         log(f'    {name}: 缺口{n_gap}段, 插入{n_ins}条'
+        #             + (f', 仍缺{rem / 3600:.1f}小时' if rem >= 60 else ''))
+        # if result['gap_no_source']:
+        #     log(f"    另有 {len(result['gap_no_source'])} 个缺口频道在 sggc 中无匹配，未处理: "
+        #         + ', '.join(n for _, n in result['gap_no_source']))
     else:
         log('[7] 连续性检查: 所有频道节目均连续')
     if bad_intervals:
@@ -398,6 +398,7 @@ def fill_epg(epg_path, sggc_source=SGGC_URL, index_list=None, output=None,
         log(f'[8] 已备份原文件 -> {bak}')
     epg_tree.write(out_path, encoding='UTF-8', xml_declaration=True)
     log(f'[8] 已写入 {out_path}')
+    log("=" * 60)
     result['output'] = out_path
     return result
 
